@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="imlargo">
+  <!-- Teja con el fondo del sitio: se sostiene igual sobre una pestaña clara y
+       una oscura, sin necesitar variante. -->
+  <rect width="64" height="64" rx="15" fill="#09090b"/>
+  <!-- El monograma "im" dibujado como rectángulos, no como texto: un <text> en
+       un favicon se renderiza con la mono que tenga el sistema y cambia de forma
+       en cada plataforma. En trazos, es idéntico en todas.
+       Astas de 6px sobre una altura de x de 16px: bastante gruesas para que a
+       16px sigan siendo dos letras y no una mancha. -->
+  <g fill="#b19eef">
+    <rect x="14" y="19" width="6" height="6" rx="1.5"/>
+    <rect x="14" y="29" width="6" height="16" rx="1.5"/>
+    <rect x="26" y="29" width="24" height="6" rx="1.5"/>
+    <rect x="26" y="29" width="6" height="16" rx="1.5"/>
+    <rect x="35" y="29" width="6" height="16" rx="1.5"/>
+    <rect x="44" y="29" width="6" height="16" rx="1.5"/>
+  </g>
+</svg>

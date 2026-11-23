@@ -1,0 +1,94 @@
+<script lang="ts">
+	import PixelBlast from '$lib/components/effects/pixel/PixelBlast.svelte';
+	import { Button } from '$lib/components/ui/button';
+	import SocialIcon from '$lib/components/common/SocialIcon.svelte';
+	import HeroBadge from './HeroBadge.svelte';
+	import { siteContent } from '$lib/content/site-content';
+	import { useReveal } from '$lib/attachments/reveal';
+	import { useSplitTitle } from '$lib/attachments/split-title';
+	import { ArrowUpRight } from '@lucide/svelte';
+
+	const { hero } = siteContent.home;
+	const { socials, fullName } = siteContent;
+</script>
+
+<section class="px-layout py-hero relative flex w-full flex-col items-center">
+	<div
+		class="absolute top-1/2 right-0 bottom-0 left-0 md:top-0 md:left-[45%]"
+		aria-hidden="true"
+		{@attach useReveal({ scale: 1.06, y: 0, duration: 1.4 })}
+	>
+		<PixelBlast antialias={false} maxPixelRatio={1}></PixelBlast>
+	</div>
+
+	<div class="max-w-wx relative z-10 flex w-full flex-col">
+		<div
+			class="flex flex-col gap-y-12"
+			{@attach useReveal({ targets: '.hero-item', stagger: 0.12 })}
+		>
+			<img
+				src="/assets/pfp.jpg"
+				alt={fullName}
+				class="hero-item size-18 rounded-full object-cover ring-1 ring-transparent transition-[transform,box-shadow] duration-500 ease-out-expo hover:scale-105 hover:ring-brand/40"
+			/>
+
+			<div class="flex flex-col gap-y-4">
+				<HeroBadge class="hero-item">{hero.badge}</HeroBadge>
+
+				<h1 class="ty-h1 max-w-3xl font-mono" {@attach useSplitTitle(0.15)}>
+					{hero.title}
+				</h1>
+
+				<p class="hero-item ty-lead max-w-prose text-pretty">
+					{hero.description}
+				</p>
+			</div>
+
+			<div class="hero-item flex flex-wrap items-center gap-x-2 gap-y-3">
+				<Button href={hero.primaryCta.href}>{hero.primaryCta.label}</Button>
+
+				<Button
+					variant="outline"
+					href={hero.secondaryCta.href}
+					target="_blank"
+					rel="noopener noreferrer"
+				>
+					<span>{hero.secondaryCta.label}</span>
+					<ArrowUpRight class="size-4" />
+				</Button>
+
+				<div class="mx-2 h-5 w-px bg-border"></div>
+
+				<Button
+					variant="outline"
+					size="icon"
+					href={socials.instagram}
+					target="_blank"
+					aria-label="Instagram"
+				>
+					<SocialIcon platform="instagram" />
+				</Button>
+
+				<Button
+					variant="outline"
+					size="icon"
+					href={socials.github}
+					target="_blank"
+					aria-label="GitHub"
+				>
+					<SocialIcon platform="github" />
+				</Button>
+
+				<Button
+					variant="outline"
+					size="icon"
+					href={socials.linkedin}
+					target="_blank"
+					aria-label="LinkedIn"
+				>
+					<SocialIcon platform="linkedin" />
+				</Button>
+			</div>
+		</div>
+	</div>
+</section>
