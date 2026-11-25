@@ -2,401 +2,246 @@ import type { Post, PostBlock, PostSummary } from './types';
 
 const posts: Post[] = [
 	{
-		slug: 'building-air-from-empty-repo-to-npm',
-		title: 'The fetch wrapper I had rewritten in every project',
+		slug: 'understanding-aes-256-cbc-in-go',
+		title: 'Understanding AES-256-CBC by building it in Go',
 		description:
-			'The `api.ts` I had retyped from scratch in every app, written once as a package. Most of the work was deciding what belonged in it: the rules that came before the code, and the reason behind each of the eight options that survived.',
-		date: '2026-09-05',
-		tags: ['Open Source', 'API Design'],
-		accent: '#3b82f6',
-		featured: true,
+			'I wanted to understand what actually happens when an application encrypts data, so I built a small AES-256-CBC implementation in Go instead of treating encryption as a black box.',
+		date: '2026-11-25',
+		tags: ['Go', 'Cryptography', 'Backend'],
+		accent: '#22c55e',
 		content: [
 			{
 				type: 'paragraph',
-				text: 'Every project grows the same file. `api.ts` or `http.ts`, wrapping `fetch`: join a base URL, serialize a body, parse the response, throw on a non-2xx. None of it is hard. I retyped it every time anyway, because copying the old one over felt worse.'
+				text: 'Encryption is one of those things that is easy to use and surprisingly easy to misunderstand. A library can turn a piece of plaintext into unreadable bytes in a few lines, but that does not explain what the key is doing, why an IV exists, or why the encrypted result cannot simply be stored as a normal string.'
 			},
 			{
 				type: 'paragraph',
-				text: 'It is never finished, either. It grows a token header when the app adds auth, a `Content-Type` exception the first time someone uploads a file, a second branch when the framework hands me its own `fetch`. By then it is a small library living inside an application, untested and unnamed.'
+				text: 'I wanted to understand those details from the implementation rather than only memorizing an API. So I built a small example in Go using AES-256-CBC, SHA-256 for deriving a 32-byte key from a passphrase, a randomly generated IV, PKCS#7-style padding, and Base64 encoding for the final ciphertext.'
+			},
+			{
+				type: 'heading',
+				level: 2,
+				text: 'Starting with a plaintext message'
 			},
 			{
 				type: 'paragraph',
-				text: 'So I wrote it once, on purpose, as a package. The client in air is seven files, about 380 lines of code, no dependencies. It builds a URL, detects a body, parses a response, and throws an error that carries the response with it.'
-			},
-			{
-				type: 'code',
-				language: 'ts',
-				code: `const api = air.create({ baseURL: 'https://api.example.com' })
-
-const user = await api.get<User>('/users/1')
-const page = await api.get<Page<User>>('/users', { query: { page: 2, active: true } })
-const created = await api.post<User>('/users', { body: { name: 'Ada' } })`
-			},
-			{ type: 'heading', level: 2, text: 'Why not one of the existing ones' },
-			{
-				type: 'paragraph',
-				text: 'I read the three clients people compare it to first, and measured them rather than trust the impression each one leaves. Bundled, minified and gzipped: `axios` 19.2 kB in the browser and 65 kB on the server, `ky` 8.8 kB, `ofetch` 4 kB and 36 kB.'
-			},
-			{
-				type: 'list',
-				items: [
-					'`axios` predates universal `fetch`, which explains most of it: an adapter layer over XHR and Node `http`, interceptors, CJS. Still the default answer in most of the ecosystem.',
-					"`ky` is the closest sibling: `fetch`-only, zero dependencies, ESM-only, one author's taste applied consistently. It makes the opposite call on batteries, and out of the box times out at 10 s and retries twice.",
-					'`ofetch` has almost the ergonomics I wanted and pays for Node compatibility to get there: three dependencies and a polyfill that is most of its server cost. It also retries GET and HEAD once, silently.'
-				]
-			},
-			{
-				type: 'paragraph',
-				text: 'None of that is wrong. It is a different bet about who owns the decisions. `ky` hands back a response you call `.json<User>()` on; `axios`, a `data` property to unwrap on every call. Two of the three retry on their own, so a request I believe I sent once may have been sent twice. My bet is that those four things are the whole job. air is 1.9 kB gzipped, the same in the browser and on the server, because there is no second transport.'
-			},
-			{
-				type: 'paragraph',
-				text: 'The same document carries the unflattering half: those three have years of resolved edge cases and about 160 million weekly downloads between them; air has one author, a test suite, and the four systems of mine that run it. I wrote it into the repo so I would not be tempted to frame it better later.'
-			},
-			{ type: 'heading', level: 2, text: 'The rules came before the code' },
-			{
-				type: 'paragraph',
-				text: 'The first commit that mattered was a document, not code: less code is better, zero dependencies ever, native `fetch` with no polyfill and no second transport, ESM only, predictable over clever, types are the docs. Then a list of what air is not allowed to become: interceptor chains, plugins, retries or timeouts in any form, caching, deduplication, Node-only features that break in a browser.'
-			},
-			{
-				type: 'paragraph',
-				text: 'A lot of ceremony for a package this size, and it earned its place. On day one the pressure to add a feature does not come from users; there are none. It comes from me at 11 p.m., deciding one small option would be convenient. With the rule written down I have to argue with the document first, and I lose more often than I win.'
-			},
-			{
-				type: 'paragraph',
-				text: 'The first rule needed a counterweight. "Less code is better" justifies any omission: the cost of a feature you shipped shows up in the diff, the cost of one you did not shows up nowhere. So every review asks a second question next to *what can we remove*: what can a user not do at all?'
-			},
-			{
-				type: 'paragraph',
-				text: 'That question found the gaps. Auto-parsing is the point of a wrapper like this, right up until you want something that lives on the response rather than in it: a `Link` header, an `ETag`, `201` versus `200`, the final URL after a redirect. None of it was reachable on a successful call, and nobody would have filed an issue; they would have dropped to `fetch` and moved on. Every client carries a `raw` twin now, same seven methods, resolving to `{ data, response }`.'
-			},
-			{ type: 'heading', level: 2, text: 'One implementation, not two' },
-			{
-				type: 'paragraph',
-				text: 'air had to work two ways: called directly, `air.get(url)`, and as a factory, `air.create({ baseURL })`. The obvious implementation gives you two code paths, a default instance and a constructor, and they drift the first time an option lands in one and not the other.'
-			},
-			{
-				type: 'paragraph',
-				text: 'So the root export is just another client, created with empty defaults. One implementation to keep correct.'
-			},
-			{
-				type: 'code',
-				language: 'ts',
-				code: `export const air = create()`
-			},
-			{
-				type: 'paragraph',
-				text: 'The same idea decided the internals. One helper lists the seven verbs and builds both the plain client and the raw one, so a method cannot be added to one and forgotten in the other. Both project from a single `request()` that resolves to both halves; a second path is where they would start disagreeing about what a request is. Seven flat files, no directory tree, no barrel except the entry point.'
-			},
-			{ type: 'heading', level: 2, text: 'Eight options, and what each one had to prove' },
-			{
-				type: 'paragraph',
-				text: 'The options table is the part I rewrote most. Every option is permanent: something a user has to learn, something I keep true in every version after this one.'
-			},
-			{
-				type: 'paragraph',
-				text: '`baseURL` joins as strings rather than resolving as URLs. Standard resolution treats a leading slash as origin-root, so `https://api.test/v1` plus `/users` drops the `/v1` and breaks any API mounted under a path. A leading `//` is read as a path for the same reason: stray double slashes are far more common than the protocol-relative case, which is deprecated anyway. I changed that rule once and reverted it when a test showed `///users` resolving to `https://users/`.'
-			},
-			{
-				type: 'paragraph',
-				text: '`query` refuses to guess. Values are primitives or arrays of primitives, enforced by the type, so a `Date` or a nested object is a compile error instead of an `[object Object]` you find in production. `undefined` and `null` are dropped; `false`, `0` and the empty string are kept. That is the same bug I have written by hand in a dozen of those `api.ts` files.'
-			},
-			{
-				type: 'code',
-				language: 'ts',
-				code: `await api.get('/search', { query: { tags: ['a', 'b'], page: 2, draft: false } })
-// ?tags=a&tags=b&page=2&draft=false
-
-await api.get('/search', { query: { since: new Date() } })
-// compile error: serialize it yourself, so the format stays your decision`
-			},
-			{
-				type: 'paragraph',
-				text: 'Body detection never re-serializes a valid `fetch` body: objects and arrays become JSON with a `Content-Type`, while `FormData`, `Blob`, `URLSearchParams`, typed arrays and strings pass through untouched. `FormData` is the one place air overrides the caller, deleting a `Content-Type` even when it was set explicitly: the multipart boundary is generated at send time, so no literal value a caller could write is ever correct. It is the most common bug in wrappers like this.'
-			},
-			{
-				type: 'paragraph',
-				text: 'Then errors, the reason people wrap `fetch` in the first place. A non-2xx throws an `AirError` carrying the status, the parsed body, the response, and the request as it went out, resolved headers included. `options.headers` may still be an unevaluated function, useless when you are holding a 401 and want to know which token went with it.'
-			},
-			{
-				type: 'code',
-				language: 'ts',
-				code: `try {
-  await api.post('/users', { body: input })
-} catch (error) {
-  if (isAirError(error) && error.status === 422) {
-    return error.data as ValidationProblem
-  }
-  throw error
-}`
-			},
-			{ type: 'heading', level: 2, text: 'Two options that take a function' },
-			{
-				type: 'paragraph',
-				text: 'The first user-facing bug was a client that kept sending an expired token. A `headers` object passed to `create()` is evaluated once and frozen in the closure, so every request after a refresh sends the stale one. A long-lived client and a rotating token are the normal case, not the exotic one.'
-			},
-			{
-				type: 'paragraph',
-				text: 'The fix stayed inside the existing option: `headers` may be a function, called once per request. Header sources merge lazily too, so a chain of `create()` calls nests closures and nothing resolves until the request that needs it. Merging eagerly would reintroduce the frozen token one layer down.'
-			},
-			{
-				type: 'code',
-				language: 'ts',
-				code: `const api = air.create({
-  baseURL: 'https://api.example.com',
-  headers: () => ({ Authorization: \`Bearer \${getToken()}\` }),
-  signal: () => AbortSignal.timeout(5000)
-})`
-			},
-			{
-				type: 'paragraph',
-				text: '`signal` later took the same shape for the same reason, so the pattern has a name: an option may be a function when its correct value is only knowable per request. Which is not a licence to make everything a thunk: `baseURL` and `parse` cannot go stale between requests.'
-			},
-			{ type: 'heading', level: 2, text: 'What I decided not to build' },
-			{
-				type: 'paragraph',
-				text: "`timeout` and `retry` both existed, and both came out. The timeout was built the obvious way: an `AbortController` in the client, a timer that aborts it, the caller's signal forwarded in, a `finally` that tears both down. But `fetch()` resolves when the headers arrive, not when the body has been read, so the cleanup disarmed the timer exactly as the download started. Against a server that drips its body over ten seconds, the request hung forever despite a 500 ms timeout and an abort at 50 ms. `AbortSignal.timeout(ms)` and `AbortSignal.any([...])` are native, so deleting the option deleted the bridge the bug lived in. `signal` goes to `fetch` untouched."
-			},
-			{
-				type: 'paragraph',
-				text: "Retry went for a subtler reason. A retry loop has to tell a transient failure from a request the caller cancelled on purpose, and the only reliable source is the `AbortSignal` itself: `abort(reason)` takes any reason, so sniffing the error's `name` for `AbortError` reads a deliberate cancellation as transient. Mine retried cancelled requests three times, and it could not be fixed where it sat: a generic helper that receives a callback and an error never has the signal in scope. In the caller's own code the loop is five lines and the signal is right there."
-			},
-			{
-				type: 'paragraph',
-				text: 'The rule generalizes past retries: moving a decision out of the client only works if the information behind it moves out too. Before extracting anything, check which of the two it needs.'
-			},
-			{ type: 'heading', level: 2, text: 'What the tests could not tell me' },
-			{
-				type: 'paragraph',
-				text: 'All three bugs air has shipped got through a green test run: a streaming request body that threw at the transport, a shared signal that broke a client permanently after five seconds, a `null` header that went out as the string `"null"`. That is the shape of the tool rather than a coverage gap. The suite mocks `fetch`, and a mock agrees with whatever its author already believed.'
-			},
-			{
-				type: 'paragraph',
-				text: "Real `fetch` refuses a `ReadableStream` body without `duplex: 'half'`, rejects an already-fired signal before sending, and stringifies a `null` header instead of deleting the key. A hand-written double does none of that unless you already knew about the bug. So `examples/` became the integration lane: eight files, each a README recipe made executable against a local server and real `fetch`, asserting what it demonstrates. They are TypeScript that Node runs directly, type-checked against the built package, so a recipe cannot drift from the types it shows. CI runs them on every supported Node, and all three bugs are pinned there."
-			},
-			{ type: 'heading', level: 2, text: 'What it cost to publish' },
-			{
-				type: 'paragraph',
-				text: 'The last stretch had nothing to do with HTTP. `dist/` was gitignored while `files` pointed at it, so publishing from a clean checkout would have shipped a package with no code in it; `npm publish --dry-run` in a fresh clone caught it, and that is now the thing I do before every release. The name `air` was taken, so it went out as `@korastd/air`, under a studio scope, and moved to `@imlargo/air` at 2.0 once it was clear this was a personal project; the old name is deprecated and points at the new one. CI publishes through OIDC rather than a stored token.'
-			},
-			{ type: 'heading', level: 2, text: 'What a month in production changed' },
-			{
-				type: 'paragraph',
-				text: 'Four of my own systems moved onto air the week it shipped. A month of running it there, and of measuring it against the other three clients, changed it more than the design document had. Two of the changes broke 1.0, which is why the current version is 2.1 rather than 1.3.'
-			},
-			{
-				type: 'paragraph',
-				text: 'One was a type that lied. A `204`, or any empty body, had always resolved to `null`; the signature promised `T`. I had written that compromise down as acceptable, because `T | null` puts a null check on every caller for a case most of them never hit. Rereading it a month later, it was a lie the compiler was helping me tell. Every call now resolves to `T | null`, and the cost is one `if (!user)` per endpoint that can answer empty, which is where the check belonged all along.'
-			},
-			{
-				type: 'paragraph',
-				text: 'The other widened the list of content types handed back unread, from three to nine, so a `stream+json` or `json-seq` endpoint is a stream on the first request rather than a promise that never settles.'
-			},
-			{
-				type: 'paragraph',
-				text: "The 2.1 change was the retry rule, and it came from the same lesson that removed retries in the first place. A generic helper never had the caller's signal in scope. A wrapper around `fetch` does: it receives `init.signal` and can refuse to retry anything already aborted without guessing from the error's name. So the rule went from no retries in any form to none inside the client, and `retry` ships as a function you hand to the `fetch` option, next to token refresh, download progress and two serializers, each under its own import path. Importing one loads one file. The client is still 2 kB."
-			},
-			{
-				type: 'code',
-				language: 'ts',
-				code: `import { retry } from '@imlargo/air/retry'
-import { refresh } from '@imlargo/air/refresh'
-
-const api = air.create({
-  baseURL: 'https://api.example.com',
-  headers: () => ({ Authorization: \`Bearer \${session.token}\` }),
-  fetch: retry({ attempts: 3, fetch: refresh({ headers: renewToken }) }),
-})`
-			},
-			{
-				type: 'paragraph',
-				text: "The review that found the bugs asked how each utility could be misused, not how it worked. Sending the renewal request through the client that carries `refresh` would deadlock it, waiting on the refresh it was part of, so `refresh` now hands your function the unwrapped `fetch` to call the renewal with. A lowercase `methods: ['post']` never matched anything. Both are tests now, and the misuse pass is a rule in the contributing guide, because I did not run it the first time."
-			},
-			{
-				type: 'paragraph',
-				text: 'The comparison numbers at the top no longer come from a table I measured once. `pnpm bench` runs every client in a fresh process, in random order, five rounds, with the server in its own process, and the same workflow runs from the Actions tab so anyone can reproduce the report with a button. It also retired a sentence I had been saying: on my laptop, air was indistinguishable from raw `fetch`; on a four-thread CI runner with small payloads it costs about 15 %, ofetch 18 %, ky 35 %, axios half. With large bodies every client disappears into the parsing. The version that survives both machines is that air and ofetch sit in the lowest-overhead group, so that is what the README says.'
-			},
-			{
-				type: 'paragraph',
-				text: 'The same run recorded what each client does with the same request. `ky` throws `SyntaxError` on a 204 if you call `.json()`. `ky` and `axios` hang on an endpoint that never closes. `axios` sends a multipart body labelled `application/x-www-form-urlencoded`. None of those show up in a speed table, and they are the bugs a user meets in production.'
-			},
-			{
-				type: 'paragraph',
-				text: 'What is left is 183 tests, a 3 kB client, five utilities that never touch it, and a contributing guide that records why each decision went the way it did, including the ones that removed something and the one that put something back.'
-			},
-			{
-				type: 'paragraph',
-				text: 'That guide is the part I would keep if I had to throw the rest away. A feature that shipped is documented by the code that implements it. A feature that was considered and rejected leaves no trace, and without somewhere to write down why, I would eventually put every one of them back.'
-			}
-		]
-	}
-	/*
-	 * Pegaso y Medusa quedan escritos pero fuera de circulación: no aparecen en
-	 * /blog, no generan su ruta, y un enlace viejo a cualquiera de las dos da
-	 * 404 como cualquier slug que no existe. El contenido se conserva completo
-	 * (nada se borró) para poder reactivarlos descomentando este bloque.
-	 */
-	/*
-	{
-		slug: 'scaling-pegaso-to-6200-users',
-		title: 'Scaling Pegaso to 6,200 users without a budget',
-		description:
-			'A course scheduling platform for my university went from a weekend project to something 6,200 students depended on. The traffic found problems I would not have predicted.',
-		date: '2026-05-18',
-		tags: ['Architecture', 'Go', 'Postgres'],
-		// violeta: la identidad visual de Pegaso, la plataforma que escala
-		accent: '#8b5cf6',
-		content: [
-			{
-				type: 'paragraph',
-				text: 'Pegaso started as a personal annoyance. Every semester, thousands of students at Universidad Nacional de Colombia opened a dozen browser tabs to reconcile course times by hand. I wrote a scheduler that did it in one pass, deployed it on the cheapest infrastructure I could find, and shared the link in a couple of group chats.'
-			},
-			{
-				type: 'paragraph',
-				text: 'Within three weeks it had 6,200 active users. No marketing and no institutional endorsement, just a link that kept getting forwarded.'
-			},
-			{ type: 'heading', level: 2, text: 'The traffic shape' },
-			{
-				type: 'paragraph',
-				text: 'Academic tooling has a brutal traffic curve. For most of the semester the service sits nearly idle, and then registration opens and every student in the faculty arrives inside the same 90 minutes. There is no point looking at average load.'
-			},
-			{
-				type: 'paragraph',
-				text: 'Autoscaling reacts too slowly to help at that granularity, so most of the architecture went into making the peak cheap to serve.'
-			},
-			{ type: 'heading', level: 3, text: 'Precomputing the expensive path' },
-			{
-				type: 'paragraph',
-				text: 'The course catalog changes a handful of times a semester and is identical for every user, while schedule permutation is per-user and combinatorial. Splitting those two lifetimes was most of the optimization: the catalog is materialized into an immutable snapshot on ingest, and the solver runs against an in-memory view of it.'
+				text: 'The example starts with something intentionally simple: a plaintext message and a passphrase. The passphrase is not used directly as the AES key. Instead, it is hashed with SHA-256 so the resulting digest is 32 bytes long, which matches the key size required by AES-256.'
 			},
 			{
 				type: 'code',
 				language: 'go',
-				code: `// The catalog is rebuilt on ingest, never per request.
-// Readers get a consistent snapshot without touching the database.
-type Catalog struct {
-	snapshot atomic.Pointer[Snapshot]
-}
+				code: `const (
+	plaintext  = "My secret message 1234"
+	passphrase = "3sc3RLrpd17"
+  )
 
-func (c *Catalog) Load() *Snapshot {
-	return c.snapshot.Load()
-}
+  h := sha256.New()
+  h.Write([]byte(passphrase))
+  key := h.Sum(nil)
 
-func (c *Catalog) Rebuild(ctx context.Context, db *pgxpool.Pool) error {
-	next, err := buildSnapshot(ctx, db)
+  fmt.Printf("Key: %s\\n", hex.EncodeToString(key))`
+			},
+			{
+				type: 'paragraph',
+				text: 'The important part here is the distinction between a passphrase and an AES key. The passphrase is something a user can remember or configure. AES-256 expects a 32-byte key. SHA-256 gives the example a deterministic 32-byte value from the passphrase.'
+			},
+			{
+				type: 'heading',
+				level: 2,
+				text: 'The key is only half of the story'
+			},
+			{
+				type: 'paragraph',
+				text: 'AES is a block cipher with a 16-byte block size. CBC mode also needs an Initialization Vector, commonly called an IV. The IV is not the secret key. It is additional input that makes the encryption of the same plaintext different when a fresh IV is used.'
+			},
+			{
+				type: 'code',
+				language: 'go',
+				code: `iv := make([]byte, 16)
+  rand.Read(iv)`
+			},
+			{
+				type: 'paragraph',
+				text: 'The example generates the IV with a cryptographically secure random source. The IV can be stored or transmitted alongside the ciphertext; it does not need to be kept secret like the key. What matters is that it should not be reused with the same key in a way that compromises the encryption scheme.'
+			},
+			{
+				type: 'heading',
+				level: 2,
+				text: 'Why padding is necessary'
+			},
+			{
+				type: 'paragraph',
+				text: 'CBC operates on complete blocks. A message such as "My secret message 1234" does not necessarily have a length that is an exact multiple of 16 bytes, so the plaintext needs padding before AES can process it.'
+			},
+			{
+				type: 'code',
+				language: 'go',
+				code: `func pkcs7pad256(data []byte) []byte {
+	dataLen := len(data)
+	padLen := blockSize % dataLen
+	padding := bytes.Repeat(
+		[]byte{byte(padLen)},
+		padLen,
+	)
+
+	return append(data, padding...)
+  }`
+			},
+			{
+				type: 'paragraph',
+				text: 'Padding adds bytes to the end of the plaintext so its length becomes aligned with the cipher block size. During decryption, the padding has to be validated and removed again before the original plaintext can be returned.'
+			},
+			{
+				type: 'heading',
+				level: 2,
+				text: 'Encrypting with AES-256-CBC'
+			},
+			{
+				type: 'paragraph',
+				text: 'Once the key, IV, and padded plaintext are ready, the actual AES operation is surprisingly small. Go provides the cipher implementation through the standard library, while CBC mode determines how the individual blocks are chained together.'
+			},
+			{
+				type: 'code',
+				language: 'go',
+				code: `func encrypt(iv, key, plaintext []byte) (ciphertext []byte, err error) {
+	block, err := aes.NewCipher(key)
+
 	if err != nil {
-		return fmt.Errorf("build snapshot: %w", err)
+		return
 	}
 
-	c.snapshot.Store(next)
-	return nil
-}`
+	mode := cipher.NewCBCEncrypter(block, iv)
+
+	plaintext = pkcs7pad256(plaintext)
+	ciphertext = make([]byte, len(plaintext))
+
+	mode.CryptBlocks(ciphertext, plaintext)
+
+	return
+  }`
 			},
 			{
 				type: 'paragraph',
-				text: 'During the registration spike, requests never hit Postgres for catalog reads. The database only handles writes and the occasional saved schedule. Allocating more memory turned out to be cheaper than finding more connections.'
+				text: 'The result of CryptBlocks is binary data. It is not guaranteed to contain printable characters, which is why the ciphertext is normally encoded before being placed into a JSON response, database field, configuration value, or other text-based storage.'
 			},
-			{ type: 'heading', level: 2, text: 'What actually broke' },
 			{
-				type: 'list',
-				items: [
-					'Connection pooling, first. The default pool size was tuned for a service that never sees 400 concurrent users, and it queued requests until they timed out.',
-					'JSON serialization of the full catalog on every response, which I had assumed was negligible and turned out to be the top entry in the CPU profile.',
-					'My own assumption that users would explore one schedule at a time. They opened five tabs and compared, which tripled the request count per session.'
-				]
+				type: 'heading',
+				level: 2,
+				text: 'Making the ciphertext transportable'
 			},
 			{
 				type: 'paragraph',
-				text: 'None of it was hard to fix once I could see it, and none of it was going to show up without real traffic on the thing.'
-			},
-			{ type: 'heading', level: 2, text: 'Afterwards' },
-			{
-				type: 'paragraph',
-				text: "The university's own platform, released the following year, adopted the interaction model Pegaso had landed on, and there were eventually formal acquisition conversations. None of that was the plan. I wanted my own schedule to stop taking an afternoon."
-			}
-		]
-	},
-	{
-		slug: 'extracting-a-framework-instead-of-designing-one',
-		title: 'Extracting a framework instead of designing one',
-		description:
-			'Medusa came out of four production Go services that had ended up with the same structure. I pulled the shared parts into a framework, then put it back into the services it came from.',
-		date: '2026-03-02',
-		tags: ['Go', 'Open Source', 'Architecture'],
-		// Medusa es medusa: en español, el nombre ya es una criatura marina. El
-		// teal bioluminiscente lee más "aguaviva de profundidad" que "framework de
-		// Go", y es esa asociación (no el lenguaje) la que le da personalidad
-		// propia frente al resto de los acentos, todos elegidos por tecnología.
-		accent: '#0891b2',
-		featured: true,
-		content: [
-			{
-				type: 'paragraph',
-				text: 'Most frameworks get written in the wrong order: someone imagines the applications people will build, designs abstractions for them, and finds out later which ones were guesses.'
-			},
-			{
-				type: 'paragraph',
-				text: 'Medusa went the other way around. By the time I wrote the first line of it I had shipped four production Go services for different clients in different industries. They shared no code. Read side by side, they had the same skeleton.'
-			},
-			{ type: 'heading', level: 2, text: 'Repetition across codebases' },
-			{
-				type: 'paragraph',
-				text: 'What made it worth extracting is that the similarity happened without coordination. Four codebases written months apart, under different constraints, had landed on the same boundary between transport, use case and persistence.'
+				text: 'The example combines the IV and ciphertext before encoding them with Base64. This gives the application one string that contains everything required to reconstruct the encrypted value, except for the secret key.'
 			},
 			{
 				type: 'code',
 				language: 'go',
-				code: `// The handler knows about HTTP. The service does not.
-// This boundary survived every codebase it was extracted from.
-type Service interface {
-	Create(ctx context.Context, input CreateInput) (*Resource, error)
-}
+				code: `ivcipher := append(iv, ciphertext...)
 
-func Handle(svc Service) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		input, err := decode[CreateInput](r)
-		if err != nil {
-			respond.Error(w, http.StatusBadRequest, err)
-			return
-		}
+  cipherb64 := base64.StdEncoding.
+	WithPadding(base64.NoPadding).
+	EncodeToString(ivcipher)
 
-		resource, err := svc.Create(r.Context(), input)
-		if err != nil {
-			respond.Error(w, statusFor(err), err)
-			return
-		}
-
-		respond.JSON(w, http.StatusCreated, resource)
-	}
-}`
+  fmt.Printf("Ciphertext: %s\\n", cipherb64)`
 			},
-			{ type: 'heading', level: 2, text: 'The validation loop' },
 			{
 				type: 'paragraph',
-				text: 'Extraction on its own proves nothing, so every abstraction had to make the round trip: pull it out, then put it back into the systems it came from. If moving a service onto the framework version made that service worse, the abstraction was wrong and got deleted.'
+				text: 'This is an important distinction: Base64 is not encryption. Anyone who has the Base64 string can decode it back into the original binary bytes. The security comes from AES and, ultimately, from protecting the key.'
+			},
+			{
+				type: 'heading',
+				level: 2,
+				text: 'Decryption is the reverse process'
+			},
+			{
+				type: 'paragraph',
+				text: 'Decryption reverses the same sequence. The application reconstructs the AES cipher from the key, creates a CBC decrypter using the IV, decrypts the ciphertext into padded plaintext, and finally removes the padding.'
+			},
+			{
+				type: 'code',
+				language: 'go',
+				code: `func decrypt(iv, key, ciphertext []byte) (plaintext []byte, err error) {
+	block, err := aes.NewCipher(key)
+
+	if err != nil {
+		return
+	}
+
+	mode := cipher.NewCBCDecrypter(block, iv)
+
+	plaintext = make([]byte, len(ciphertext))
+	mode.CryptBlocks(plaintext, ciphertext)
+
+	return pkcs7strip256(plaintext)
+  }`
+			},
+			{
+				type: 'paragraph',
+				text: 'The important property is that encryption and decryption must agree on the same key, IV, cipher mode, and padding scheme. Changing any of those details can make the ciphertext impossible to decrypt correctly.'
+			},
+			{
+				type: 'heading',
+				level: 2,
+				text: 'Where this pattern can appear in a backend'
+			},
+			{
+				type: 'paragraph',
+				text: 'The same basic idea can appear in backend systems when an application needs application-level encryption for sensitive values. For example, a system could encrypt a value before storing it in a database and decrypt it only when the application genuinely needs the original value.'
 			},
 			{
 				type: 'list',
-				ordered: true,
 				items: [
-					'Identify a pattern that appears in at least three of the four services.',
-					'Extract the smallest version of it that covers all three call sites.',
-					'Migrate one service onto it and read the resulting diff.',
-					'If the migration adds indirection without removing decisions, discard it.'
+					'Encrypting selected sensitive database fields rather than storing their plaintext representation.',
+					'Protecting application-level secrets that need to be recovered by the application later.',
+					'Encrypting data exchanged between application components when an additional application-level protection layer is required.',
+					'Learning how cryptographic primitives fit together before using higher-level encryption libraries or services.'
 				]
 			},
 			{
 				type: 'paragraph',
-				text: 'Step four killed more candidates than the rest combined. Configurable middleware chains, a generic repository layer, a pluggable event bus. Each one was fine on its own, and each one made the calling code harder to read.'
+				text: 'This is different from password hashing. A password normally should not be encrypted so that the application can decrypt it later. Passwords are generally stored using a password hashing algorithm designed for that purpose. Encryption is appropriate for data that the application legitimately needs to recover.'
 			},
-			{ type: 'heading', level: 2, text: 'Where it landed' },
+			{
+				type: 'heading',
+				level: 2,
+				text: 'What I learned from implementing it'
+			},
 			{
 				type: 'paragraph',
-				text: 'What is left is smaller than what I would have designed on a whiteboard, and every piece of it has a production system behind it. When someone asks why a boundary sits where it does, I can point at four codebases that put it there before I did.'
+				text: 'The biggest lesson was that encryption is not just calling AES. There are several decisions around it: how the key is created and stored, how the IV is generated, how plaintext is padded, how ciphertext is represented, and how the application detects invalid or corrupted data.'
+			},
+			{
+				type: 'paragraph',
+				text: 'It also made the difference between encoding and encryption much clearer. Hex and Base64 are representations of bytes. They make binary data easier to display or transport, but neither one provides confidentiality. AES is the part that provides encryption, while the key is the secret that controls who can decrypt the result.'
+			},
+			{
+				type: 'heading',
+				level: 2,
+				text: 'CBC is not the whole security story'
+			},
+			{
+				type: 'paragraph',
+				text: 'The example is useful for understanding AES-CBC, but understanding an algorithm is different from designing a production cryptosystem. CBC by itself does not provide authenticated integrity. An attacker may be able to modify ciphertext without the recipient having a reliable way to know that the plaintext was tampered with.'
+			},
+			{
+				type: 'paragraph',
+				text: 'For a new production system, I would not treat this small example as a drop-in encryption library. An authenticated encryption mode such as AES-GCM is usually a better starting point because confidentiality and integrity are handled together. Key management also needs to be designed separately from the encryption function itself.'
+			},
+			{
+				type: 'heading',
+				level: 2,
+				text: 'The part worth remembering'
+			},
+			{
+				type: 'paragraph',
+				text: 'The code is small, but the concepts behind it are useful far beyond this example. A plaintext becomes bytes, a key determines the encryption operation, an IV provides the required initialization input for CBC, padding makes the message block-aligned, AES transforms the data into ciphertext, and Base64 gives that binary result a convenient textual representation.'
+			},
+			{
+				type: 'paragraph',
+				text: 'I started this example because I wanted to stop treating encryption as a black box. The useful result was not just getting a ciphertext string back. It was understanding what each piece of the process is responsible for, and where a simple learning implementation stops being enough for a real backend system.'
 			}
 		]
 	}
-	*/
 ];
 
 const WORDS_PER_MINUTE = 210;
