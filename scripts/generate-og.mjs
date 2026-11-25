@@ -35,8 +35,6 @@ const card = ({ accent = BRAND, eyebrow, body, left, right, css = '' }) => `<!do
     letter-spacing: 0.01em; }
   .eyebrow { display: flex; align-items: center; gap: 13px; text-transform: uppercase;
     letter-spacing: 0.14em; }
-  /* Punto de acento con su halo, el mismo gesto que el badge del hero: el único
-     color de la tarjeta. */
   .dot { width: 7px; height: 7px; border-radius: 50%; background: ${accent};
     box-shadow: 0 0 0 4px color-mix(in oklab, ${accent} 22%, transparent); flex: none; }
   .foot { display: flex; align-items: baseline; justify-content: space-between; gap: 40px;
@@ -122,12 +120,12 @@ if (CHECK) {
 
 	if (missing.length > 0) {
 		const list = missing.map((card) => `    ${path.relative(root, card.file)}`).join('\n');
-		console.error(`\n  ✗ Faltan ${missing.length} tarjeta(s) de Open Graph:\n${list}`);
-		console.error('\n    Corré: pnpm og\n');
+		console.error(`\n  ✗ Faltan ${missing.length} berhasil Open Graph:\n${list}`);
+		console.error('\n    Coba: pnpm og\n');
 		process.exit(1);
 	}
 
-	console.log(`Open Graph: ${cards.length} tarjeta(s), todas presentes.`);
+	console.log(`Open Graph: ${cards.length} good`);
 	process.exit(0);
 }
 
